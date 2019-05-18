@@ -7,14 +7,16 @@
 #include <WiFiClient.h>
 #include <ArduinoJson.h>
 
-#ifndef STASSID
-#define STASSID "TP-LINK_xxxx"  // 你的wifi名字
-#define STAPSK  "12345678"      // 你的wifi密码
-#endif
+#define STASSID "TP-LINK_XXXX"  // 你的wifi名字
+#define STAPSK  "********"      // 你的wifi密码
+
+#define STASSID2 "TP-LINK_XXXX"  // 你的备用wifi名字
+#define STAPSK2  "********"      // 你的备用wifi密码
+
+char* ssid = STASSID;
+char* password = STAPSK;
 
 // https://arduino-esp8266.readthedocs.io/en/latest/
-const char* ssid = STASSID;
-const char* password = STAPSK;
 
 // 板子的web服务器，可以通过板子的ip地址访问相应的url快速控制和测试功能，这里去除了http示例中的mDNS部分，因为不知道什么原因导致加上就无法正常运行，所以只能以ip的形式访问
 ESP8266WebServer server(80);
@@ -24,7 +26,6 @@ IRsend irsend(kIrLed);
 
 
 void handleNotFound() {
-
   String message = "File Not Found\n\n";
   message += "URI: ";
   message += server.uri();
@@ -37,7 +38,6 @@ void handleNotFound() {
     message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
   }
   server.send(404, "text/plain", message);
-
 }
 
 void drawGraph() {
@@ -54,7 +54,6 @@ void drawGraph() {
     y = y2;
   }
   out += "</g>\n</svg>\n";
-
   server.send(200, "image/svg+xml", out);
 }
 
@@ -74,7 +73,7 @@ void clearCmd(const char* id) {
   HTTPClient http;
 
   http.setTimeout(1000 * 10);
-  String url = "http://haha.com/esp8266/clearCmd?password=xxx&id=" + String(id);
+  String url = "http://hehe.com/esp8266/clearCmd?password=***&id=" + String(id);
   Serial.println("[HTTP] begin clearCmd: " + url);
   if (http.begin(client, url)) {
     Serial.println("[HTTP] GET " + url);
@@ -97,13 +96,23 @@ void clearCmd(const char* id) {
   }
 }
 
+void ledOn(void) {
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW); // led on
+}
+
+void ledOff(void) {
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // led on
+}
+
 void getData(void) {
   WiFiClient client;
   HTTPClient http;
 
   http.setTimeout(1000 * 10);
   Serial.print("[HTTP] begin...\n");
-  if (http.begin(client, "http://haha.com/esp8266/getCmd")) {
+  if (http.begin(client, "http://hehe.com/esp8266/getCmd")) {
     Serial.print("[HTTP] GET...\n");
     // start connection and send HTTP header
     int httpCode = http.GET();
@@ -129,8 +138,7 @@ void getData(void) {
           const char* cmd = root_0["cmd"];
           Serial.println("id:" + String(id) + ",  cmd:" + String(cmd));
 
-          pinMode(LED_BUILTIN, OUTPUT);
-          digitalWrite(LED_BUILTIN, LOW); // led on
+          ledOn();
           for (int i = 1; i <= 5; i++) {
             if (strcmp(cmd, "iron") == 0) {
               Serial.println("iron");
@@ -142,7 +150,7 @@ void getData(void) {
               delay(3000);
             }
           } // for
-          digitalWrite(LED_BUILTIN, HIGH); // led off
+          ledOff();
           clearCmd(id);
 
         } // if doc.size > 0
@@ -157,17 +165,19 @@ void getData(void) {
   }
 }
 
-void setup(void) {
-
-  irsend.begin();
-  Serial.begin(115200);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.println("");
-
-  // Wait for connection
-  while (WiFi.status() != WL_CONNECTED) {
+void waitWifiConnect(void) {
+  for (int i = 0; WiFi.status() != WL_CONNECTED; i++) {
+    if (i == 60) {
+      Serial.printf("\ntry another ssid\n");
+      if (ssid == STASSID) {
+        ssid = STASSID2;
+        password = STAPSK2;
+      } else {
+        ssid = STASSID;
+        password = STAPSK;
+      }
+      WiFi.begin(ssid, password);
+    }
     delay(500);
     Serial.print(".");
   }
@@ -176,12 +186,26 @@ void setup(void) {
   Serial.println(ssid);
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+}
+
+void setup(void) {
+  irsend.begin();
+  Serial.begin(74880);
+  Serial.println("");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  waitWifiConnect();
+
+  ledOn();
+  delay(1000);
+  ledOff();
+  delay(1000);
+  ledOn();
+  delay(1000);
+  ledOff();
 
   server.on("/", []() {
-    server.send(200, "text/plain", "ok");
-  });
-
-  server.on("/get", []() {
     unsigned long currentMillis = millis();
     server.send(200, "text/plain", "currentMillis:" + String(currentMillis));
   });
@@ -196,52 +220,35 @@ void setup(void) {
     digitalWrite(LED_BUILTIN, HIGH); // led off
   });
 
-  // 小米手机万能遥控dump下来的代码
   server.on("/on", []() {
-    uint16_t rawDataOn[227] = {3706, 1596, 634, 1152, 632, 1144, 634, 422, 632, 422, 632, 396, 654, 1112, 658, 380, 654, 380, 658, 1112, 656, 1146, 634, 420, 632, 1146, 626, 436, 634, 418, 634, 1148, 634, 1154, 634, 422, 634, 1148, 632, 1150, 634, 420, 634, 420, 632, 1148, 634, 418, 634, 422, 634, 1150, 632, 418, 634, 418, 634, 420, 632, 418, 634, 418, 664, 386, 634, 418, 634, 418, 634, 400, 658, 414, 634, 404, 656, 418, 634, 426, 662, 392, 634, 418, 664, 390, 634, 418, 662, 1120, 662, 398, 634, 420, 662, 1084, 630, 404, 628, 402, 628, 1162, 634, 1148, 634, 420, 662, 390, 634, 402, 654, 416, 634, 414, 634, 416, 634, 416, 664, 1114, 636, 1144, 634, 414, 664, 386, 634, 422, 662, 392, 664, 390, 634, 420, 634, 418, 634, 424, 662, 392, 664, 1118, 634, 414, 634, 418, 634, 420, 664, 396, 664, 388, 628, 434, 664, 372, 684, 390, 664, 388, 664, 392, 664, 392, 636, 422, 634, 418, 664, 392, 634, 416, 634, 424, 664, 386, 664, 390, 634, 414, 664, 1086, 688, 1078, 684, 1082, 660, 1138, 662, 392, 664, 388, 664, 390, 634, 424, 662, 394, 664, 364, 658, 1142, 664, 392, 634, 424, 662, 368, 686, 382, 664, 386, 662, 1122, 636, 418, 662, 1120, 662, 392, 664, 394, 634, 1152, 636, 1152, 634, 414, 636}; // UNKNOWN B5A34799
-    irsend.sendRaw(rawDataOn, 227, 38); // Send a raw data capture at 38kHz.
-    server.send(200, "text/plain", "on");
-  });
-
-  server.on("/off", []() {
-    uint16_t rawDataOff[227] = {3744, 1502, 686, 1080, 712, 1056, 712, 330, 710, 330, 714, 326, 712, 1058, 712, 328, 714, 324, 688, 1080, 714, 1056, 714, 324, 712, 1060, 710, 332, 712, 326, 688, 1080, 686, 1084, 686, 356, 712, 1058, 686, 1080, 688, 352, 688, 350, 714, 1056, 712, 326, 688, 354, 688, 1082, 686, 350, 688, 350, 688, 352, 684, 352, 686, 352, 714, 326, 688, 352, 712, 328, 686, 348, 684, 350, 630, 406, 684, 352, 686, 350, 686, 356, 688, 356, 686, 352, 686, 354, 688, 352, 688, 350, 686, 352, 688, 1080, 686, 352, 686, 352, 688, 1066, 702, 1082, 712, 328, 686, 354, 688, 352, 688, 354, 686, 352, 684, 354, 686, 354, 686, 1084, 686, 1084, 710, 332, 686, 352, 686, 350, 686, 352, 686, 354, 686, 350, 688, 352, 688, 354, 686, 352, 686, 1086, 688, 352, 688, 352, 686, 354, 688, 350, 686, 352, 686, 354, 688, 350, 684, 354, 686, 356, 682, 352, 682, 352, 682, 352, 682, 354, 686, 352, 688, 352, 686, 352, 686, 350, 686, 352, 686, 352, 688, 1080, 686, 1080, 684, 1082, 686, 1082, 686, 354, 686, 352, 688, 352, 688, 350, 688, 354, 686, 354, 684, 1082, 686, 352, 684, 352, 686, 350, 686, 350, 686, 350, 686, 1082, 682, 354, 684, 350, 686, 350, 686, 352, 688, 1082, 684, 1082, 688, 352, 688};  // UNKNOWN 6081BAF1
-    irsend.sendRaw(rawDataOff, 227, 38); // Send a raw data capture at 38kHz.
-    server.send(200, "text/plain", "off");
-  });
-
-
-  server.on("/on2", []() {
     irOn();
     server.send(200, "text/plain", "on");
   });
 
-  server.on("/off2", []() {
+  server.on("/off", []() {
     irOff();
     server.send(200, "text/plain", "off");
   });
   server.on("/test.svg", drawGraph);
   server.onNotFound(handleNotFound);
-
   server.begin();
   Serial.println("HTTP server started");
-
 }
 
 // 延时（毫秒），每隔多长时间获取一次命令
-#define GET_DATA_TIME (1000*60*2)
+#define GET_DATA_TIME (1000*60)
 unsigned long preMillis = 0;
 
 void loop(void) {
   server.handleClient();
+
 #if 1
   unsigned long currentMillis = millis();
   if (currentMillis - preMillis > GET_DATA_TIME) {
     preMillis = currentMillis;
     Serial.println(preMillis);
+    waitWifiConnect();
     getData();
   }
-#else
-  getData();
-  delay(GET_DATA_TIME);
 #endif
 }
